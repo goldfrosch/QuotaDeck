@@ -1,0 +1,63 @@
+{
+  "name": "quotadeck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.mjs",
+  "description": "Always-on-top quota deck for AI coding CLIs, plus single-owner credential custody for orphaned OAuth stores.",
+  "license": "MIT",
+  "author": "quotadeck",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "postinstall": "node scripts/ensure-electron.mjs",
+    "probe": "node src/cli/probe.ts",
+    "custody": "node src/cli/custody.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.renderer.json",
+    "icon": "node scripts/make-icon.mjs",
+    "bundle": "node scripts/bundle.mjs",
+    "app": "pnpm run bundle && electron dist/main.mjs",
+    "dist": "pnpm run typecheck && pnpm run icon && pnpm run bundle && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "dev.quotadeck.app",
+    "productName": "quotadeck",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "quotadeck-${version}-portable.exe"
+    },
+    "compression": "maximum"
+  }
+}

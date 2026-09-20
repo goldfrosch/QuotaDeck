@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // `node` is here only because the renderer imports *types* from preload,
+    // which imports electron's typings. No Node API is reachable at runtime:
+    // contextIsolation is on and nodeIntegration is off.
+    "types": ["node"]
+  },
+  "include": ["src/renderer/**/*.ts"]
+}

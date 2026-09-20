@@ -1,0 +1,986 @@
+/*
+ * quotadeck renderer styles.
+ *
+ * Tokens and layout follow DESIGN.md. Two constraints shape the file:
+ *
+ *  1. The page runs under `style-src 'self'`, so no width or height may be
+ *     written as a style attribute in markup. Every proportional element
+ *     (meter fills, activity bars) therefore ships at zero and is sized by the
+ *     renderer through the CSSOM, which the policy does not restrict.
+ *  2. The shell owns the viewport. Quotas is a fixed comparison surface with
+ *     no scroll owner; only the two secondary views may scroll.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --surface-canvas: #0b0f14;
+  --surface-panel: #121820;
+  --surface-raised: #18212b;
+  --surface-recessed: #0a0e13;
+  --surface-sunken: #0e141a;
+  --surface-nav: #0e1319;
+  --surface-header: #141b23;
+
+  --text-primary: #e9eef4;
+  --text-secondary: #b5c0cc;
+  --text-muted: #8996a5;
+
+  --line: #2a3542;
+  --line-soft: rgba(255, 255, 255, 0.055);
+  --focus: #9ddcff;
+  --brand: #38bdf8;
+
+  --provider-claude: #e6a57a;
+  --provider-codex: #78c7e8;
+  --provider-zai: #b8a6ff;
+
+  --status-ok: #73c991;
+  --status-watch: #f0b65a;
+  --status-high: #ff7272;
+  --status-unknown: #a3adb8;
+
+  --ownership-owned: #7cc7c1;
+  --ownership-observed: #d6b36a;
+  --trend-base: #55697d;
+  --trend-recent: #8fa3b8;
+
+  --type-metric: 15px;
+  --type-provider: 13px;
+  --type-body: 12px;
+  --type-label: 10px;
+  --type-micro: 9px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font: 500 var(--type-body) / 16px "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  font-feature-settings: "cv01", "ss03";
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.mono,
+.metric-value,
+.reset,
+.table {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: 40px 36px minmax(0, 1fr);
+  background: linear-gradient(rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0) 80px), var(--surface-canvas);
+}
+
+/* ---------------------------------------------------------------- chrome */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3) var(--space-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.brand {
+  color: var(--brand);
+  font-size: var(--type-provider);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.title-meta {
+  margin-inline-start: auto;
+  color: var(--text-muted);
+  font-size: var(--type-label);
+}
+
+.icon-button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: var(--line);
+}
+.icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.icon-button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tabs {
+  padding-inline: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-nav);
+}
+
+.tabs-list {
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tab {
+  position: relative;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tab::after {
+  content: "";
+  position: absolute;
+  inset: auto 16px 0;
+  height: 2px;
+  background: transparent;
+}
+
+.tab:hover {
+  color: var(--text-secondary);
+}
+.tab[aria-selected="true"] {
+  color: var(--text-primary);
+}
+.tab[aria-selected="true"]::after {
+  background: var(--brand);
+}
+
+button:focus-visible,
+[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+main {
+  min-block-size: 0;
+  padding: var(--space-2);
+}
+
+.view {
+  display: none;
+  height: 100%;
+}
+.view.active {
+  display: grid;
+}
+
+/* ------------------------------------------------------------ quota rack */
+
+.quota-view {
+  grid-template-rows: 45px 19px repeat(3, minmax(0, 1fr)) 37px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--surface-panel);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.constraint {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-header);
+}
+
+.eyebrow {
+  color: var(--text-muted);
+  font: 650 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.constraint strong {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.constraint .peak {
+  color: var(--status-high);
+}
+.constraint .peak.watch {
+  color: var(--status-watch);
+}
+.constraint .peak.ok {
+  color: var(--status-ok);
+}
+
+.freshness {
+  color: var(--status-ok);
+  font: 600 var(--type-label) / 14px "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+.freshness.degraded {
+  color: var(--status-watch);
+}
+
+.column-head {
+  display: grid;
+  grid-template-columns: 86px 1fr 1fr;
+  align-items: end;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) 3px 18px;
+  color: var(--text-muted);
+  font: 650 var(--type-micro) / 12px "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.provider {
+  --provider: var(--brand);
+  display: grid;
+  grid-template-columns: 86px 1fr 1fr;
+  grid-template-rows: 1fr 23px;
+  gap: 0 var(--space-2);
+  min-height: 0;
+  padding: var(--space-2) var(--space-3) 5px 14px;
+  border-top: 1px solid var(--line-soft);
+  box-shadow: inset 2px 0 var(--provider);
+}
+
+.provider:hover,
+.provider:focus-visible {
+  background: rgba(255, 255, 255, 0.018);
+}
+.provider.claude {
+  --provider: var(--provider-claude);
+}
+.provider.codex {
+  --provider: var(--provider-codex);
+}
+.provider.zai {
+  --provider: var(--provider-zai);
+}
+
+.provider-id {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+}
+
+.monogram {
+  min-width: 27px;
+  margin-bottom: 5px;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--provider) 65%, transparent);
+  border-radius: 3px;
+  color: var(--provider);
+  font: 650 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.provider-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-provider);
+  font-weight: 650;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-plan {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font: 500 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric {
+  min-width: 0;
+  align-self: center;
+}
+
+.metric-top,
+.metric-bottom {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.metric-label,
+.state-word {
+  color: var(--text-muted);
+  font-size: var(--type-label);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.metric-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-value {
+  color: var(--text-primary);
+  font-size: var(--type-metric);
+  font-weight: 650;
+  line-height: 18px;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.metric-value small {
+  color: var(--text-muted);
+  font: 500 var(--type-micro) / 12px "Segoe UI Variable", "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.meter {
+  position: relative;
+  height: 5px;
+  margin-block: 4px 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-recessed);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+/* Calibration ticks at the warn (60%) and critical (85%) thresholds. */
+.meter::before,
+.meter::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset-block: 0;
+  width: 1px;
+  background: rgba(233, 238, 244, 0.72);
+  box-shadow: 0 0 0 1px rgba(10, 14, 19, 0.55);
+}
+
+.meter::before {
+  inset-inline-start: 60%;
+}
+.meter::after {
+  inset-inline-start: 85%;
+}
+
+.meter > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--status-ok);
+  transition: width 0.4s ease;
+}
+
+.metric.watch .meter > i {
+  background: var(--status-watch);
+}
+.metric.high .meter > i {
+  background: var(--status-high);
+}
+.metric.ok .state-word {
+  color: var(--status-ok);
+}
+.metric.watch .state-word {
+  color: var(--status-watch);
+}
+.metric.high .state-word {
+  color: var(--status-high);
+}
+.metric.unknown .state-word {
+  color: var(--status-unknown);
+}
+
+.state-word::before {
+  content: "\25cf";
+  margin-inline-end: 3px;
+  font-size: 7px;
+}
+
+.metric.watch .state-word::before {
+  content: "\25b2";
+}
+.metric.high .state-word::before {
+  content: "\25c6";
+}
+.metric.unknown .state-word::before {
+  content: "\25cb";
+}
+
+.reset {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--type-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stand-in that keeps the band height stable when a provider is down. */
+.provider-status {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-inline-end: var(--space-1);
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.provider-status.bad {
+  color: var(--status-high);
+}
+.provider-status.waiting {
+  color: var(--text-muted);
+}
+
+.provider-note {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px dotted rgba(181, 192, 204, 0.18);
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-note strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.rack-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--type-label);
+}
+
+.provider-count {
+  color: var(--text-secondary);
+}
+.provider-dots {
+  display: flex;
+  gap: 4px;
+}
+.provider-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.provider-dot.claude {
+  background: var(--provider-claude);
+}
+.provider-dot.codex {
+  background: var(--provider-codex);
+}
+.provider-dot.zai {
+  background: var(--provider-zai);
+}
+.provider-dot.down {
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+}
+.rack-footer .spacer {
+  margin-inline-start: auto;
+}
+
+/* -------------------------------------------------------- secondary views */
+
+.secondary-view {
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--surface-panel);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.section-head h2 {
+  font-size: var(--type-body);
+  font-weight: 650;
+}
+
+.section-head span {
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--type-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scroll-body {
+  min-block-size: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.scroll-body::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-body::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}
+.scroll-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.health-body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.empty {
+  padding: var(--space-3);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.empty.bad {
+  color: var(--status-high);
+}
+
+/* ---------------------------------------------------------------- tables */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-label);
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: right;
+}
+
+.table th {
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.table th:first-child,
+.table td:first-child {
+  width: 52%;
+  max-width: 188px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table td:first-child {
+  font-size: var(--type-micro);
+  letter-spacing: -0.025em;
+}
+
+/* --------------------------------------------------------------- activity */
+
+.activity-summary {
+  align-content: start;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.activity-summary h3 {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.route-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.route-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 42px;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--text-muted);
+  font-size: var(--type-label);
+}
+
+.route-row strong {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-recessed);
+}
+
+.route-meter > i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--route, var(--text-muted));
+}
+
+.route-row.claude {
+  --route: var(--provider-claude);
+}
+.route-row.codex {
+  --route: var(--provider-codex);
+}
+.route-row.zai {
+  --route: var(--provider-zai);
+}
+
+.activity-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.activity-fact {
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.activity-fact span {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.activity-fact strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: 650 var(--type-provider) / 17px "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-note {
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  line-height: 14px;
+}
+
+.activity-trend {
+  margin-top: var(--space-1);
+  padding-top: 10px;
+  border-top: 1px dotted rgba(181, 192, 204, 0.18);
+}
+
+.activity-trend-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sparkbars {
+  height: 52px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: end;
+  gap: 4px;
+  margin-top: var(--space-2);
+}
+
+.sparkbars > i {
+  min-height: 4px;
+  height: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--trend-base);
+}
+
+.sparkbars > i.recent {
+  background: var(--trend-recent);
+}
+
+/* ----------------------------------------------------------------- health */
+
+.health-list {
+  list-style: none;
+  padding: 0;
+}
+
+.health-line {
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pill {
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--ownership-owned) 68%, transparent);
+  border-radius: 3px;
+  color: var(--ownership-owned);
+  background: color-mix(in srgb, var(--ownership-owned) 10%, transparent);
+  font: 650 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  text-align: center;
+}
+
+.pill.observed {
+  border-color: color-mix(in srgb, var(--ownership-observed) 70%, transparent);
+  color: var(--ownership-observed);
+  background: color-mix(in srgb, var(--ownership-observed) 11%, transparent);
+}
+
+.health-line .store {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-line .expiry {
+  color: var(--status-ok);
+  font: 500 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+
+.health-line .expiry.persistent {
+  color: var(--text-muted);
+}
+.health-line .expiry.bad {
+  color: var(--status-high);
+}
+
+.health-overview {
+  align-self: stretch;
+  align-content: center;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-block: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.health-overview h3 {
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.health-overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.health-stat {
+  padding: 11px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.health-stat span {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.health-stat strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font: 650 var(--type-provider) / 17px "Cascadia Mono", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custody-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px;
+  border: 1px solid rgba(115, 201, 145, 0.22);
+  border-radius: 5px;
+  background: rgba(115, 201, 145, 0.035);
+}
+
+.custody-summary.bad {
+  border-color: rgba(255, 114, 114, 0.3);
+  background: rgba(255, 114, 114, 0.045);
+}
+
+.custody-summary span {
+  color: var(--text-muted);
+  font-size: var(--type-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.custody-summary strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--status-ok);
+  font-size: var(--type-body);
+  font-weight: 650;
+}
+
+.custody-summary.bad strong {
+  color: var(--status-high);
+}
+
+.custody-summary small {
+  color: var(--text-secondary);
+  font: 500 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+
+.health-actions {
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.health-actions button {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.health-actions button:hover:not(:disabled) {
+  border-color: #4b5d70;
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tab,
+  .icon-button,
+  .provider,
+  .health-actions button {
+    transition:
+      color 120ms ease-out,
+      background-color 120ms ease-out,
+      border-color 120ms ease-out,
+      transform 120ms ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter > i {
+    transition: none;
+  }
+}
