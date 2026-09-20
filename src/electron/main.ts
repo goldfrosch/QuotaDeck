@@ -12,6 +12,7 @@
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import { writeFile } from "node:fs/promises";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadAllStores, pickCredential, snapshot } from "../core/stores.ts";
 import type { LoadedStore } from "../core/stores.ts";
@@ -36,10 +37,57 @@ let state: DeckState = emptyState();
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
+/**
+ * Whether the widget is held above every other window.
+ *
+ * Pinning is a real trade-off rather than a nicety: always-on-top is what
+ * makes a glance-first widget useful, and also what makes it a nuisance the
+ * moment you need the space underneath. So it is a user decision, and it
+ * persists -- defaulting to on keeps the behaviour the widget shipped with.
+ */
+let pinned = true;
+
 function publish(patch: Partial<DeckState>): void {
   state = { ...state, ...patch, updatedAt: Date.now() };
   win?.webContents.send("deck:update", state);
   updateTray();
+}
+
+/* ----------------------------------------------------------- preferences */
+
+function loadPinned(): boolean {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(PATHS.uiSettings, "utf8"));
+    if (typeof raw === "object" && raw !== null) {
+      const value = (raw as Record<string, unknown>)["pinned"];
+      if (typeof value === "boolean") return value;
+    }
+  } catch {
+    // First run, or the file was hand-edited into nonsense. Either way the
+    // shipped default is the safe answer, so fall through to it.
+  }
+  return true;
+}
+
+function savePinned(value: boolean): void {
+  try {
+    mkdirSync(dirname(PATHS.uiSettings), { recursive: true });
+    writeFileSync(PATHS.uiSettings, `${JSON.stringify({ pinned: value })}\n`, "utf8");
+  } catch {
+    // A preference that cannot be written must not take the widget down; the
+    // toggle still applies to this session.
+  }
+}
+
+/**
+ * "screen-saver" is deliberately the highest practical level: it keeps the
+ * widget above full-screen apps, which is the point of something you never
+ * want to hunt for. Unpinning drops it to an ordinary window so anything can
+ * cover it.
+ */
+function applyPin(target: BrowserWindow, value: boolean): void {
+  if (value) target.setAlwaysOnTop(true, "screen-saver");
+  else target.setAlwaysOnTop(false);
 }
 
 /* ------------------------------------------------------------------ tray */
@@ -140,7 +188,7 @@ function createWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
+    alwaysOnTop: pinned,
     show: false,
     backgroundColor: "#0b0f14",
     webPreferences: {
@@ -150,9 +198,7 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
-  // "screen-saver" keeps it above full-screen apps, which is the point of a
-  // glanceable widget you never want to hunt for.
-  created.setAlwaysOnTop(true, "screen-saver");
+  applyPin(created, pinned);
   void created.loadFile(join(HERE, "index.html"));
   created.once("ready-to-show", () => created.show());
   created.on("closed", () => {
@@ -199,9 +245,23 @@ async function runSmoke(target: BrowserWindow, dir: string): Promise<void> {
     sections.push(`=== ${name} ===\n${text}`);
   }
 
+  // The pin is a main-process window property, so driving the button and
+  // reading the window back is the only way to prove the wiring. Two clicks
+  // exercise both directions and leave the saved preference where it started.
+  const pinStates: boolean[] = [target.isAlwaysOnTop()];
+  for (let click = 0; click < 2; click += 1) {
+    await target.webContents.executeJavaScript("document.getElementById('pin').click()");
+    await new Promise<void>((resolve) => setTimeout(resolve, 200));
+    pinStates.push(target.isAlwaysOnTop());
+    if (click === 0) {
+      await writeFile(join(dir, "smoke-unpinned.png"), (await target.webContents.capturePage()).toPNG());
+    }
+  }
+
   await writeFile(
     join(dir, "smoke.txt"),
-    `${sections.join("\n\n")}\n\n--- renderer console (${logs.length}) ---\n${logs.join("\n")}\n`,
+    `${sections.join("\n\n")}\n\n--- alwaysOnTop: ${pinStates.join(" -> ")} ---` +
+      `\n\n--- renderer console (${logs.length}) ---\n${logs.join("\n")}\n`,
     "utf8",
   );
   app.exit(0);
@@ -236,6 +296,13 @@ function wireIpc(): void {
     await runCustodyTick(false);
     return state;
   });
+  ipcMain.handle("deck:pin-get", () => pinned);
+  ipcMain.handle("deck:pin-set", (_event, value: unknown) => {
+    pinned = value === true;
+    if (win !== null) applyPin(win, pinned);
+    savePinned(pinned);
+    return pinned;
+  });
   ipcMain.handle("deck:open-state-dir", async () => {
     await shell.openPath(PATHS.stateDir);
   });
@@ -243,6 +310,7 @@ function wireIpc(): void {
 }
 
 app.whenReady().then(async () => {
+  pinned = loadPinned();
   wireIpc();
 
   tray = new Tray(nativeImage.createFromBuffer(gaugeIconPng(16, severityColour(0), 0)));

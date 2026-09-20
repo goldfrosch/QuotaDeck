@@ -36,6 +36,7 @@ function codexHome(): string {
 }
 
 const OPENCODE_DATA = join(xdgDataHome(), "opencode");
+const QUOTADECK_STATE = join(xdgDataHome(), "quotadeck");
 
 export const PATHS = {
   claudeCredentials: join(claudeConfigDir(), ".credentials.json"),
@@ -51,7 +52,13 @@ export const PATHS = {
    */
   foreignLockDir: process.env["OPENCODE_CLAUDE_AUTH_REFRESH_LOCK_DIR"] ?? OPENCODE_DATA,
   /** quotadeck's own lock/state dir -- never shared. */
-  stateDir: join(xdgDataHome(), "quotadeck"),
+  stateDir: QUOTADECK_STATE,
+  /**
+   * Window preferences that must outlive a restart. Only the pin lives here:
+   * a widget that forgets whether you wanted it on top has to be re-toggled
+   * every launch.
+   */
+  uiSettings: join(QUOTADECK_STATE, "ui.json"),
 } as const;
 
 /**

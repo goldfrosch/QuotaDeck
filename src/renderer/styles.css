@@ -158,6 +158,25 @@ button:disabled {
   stroke-linejoin: round;
 }
 
+/*
+ * The pin reads as a toggle without relying on colour alone: driven in, lit,
+ * and upright when the widget is held above other windows; tilted loose and
+ * muted when anything may cover it.
+ */
+.icon-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--brand) 45%, transparent);
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+#pin svg {
+  transform: rotate(-38deg);
+}
+
+#pin[aria-pressed="true"] svg {
+  transform: none;
+}
+
 .tabs {
   padding-inline: var(--space-2);
   border-bottom: 1px solid var(--line);
@@ -219,7 +238,7 @@ main {
 /* ------------------------------------------------------------ quota rack */
 
 .quota-view {
-  grid-template-rows: 45px 19px repeat(3, minmax(0, 1fr)) 37px;
+  grid-template-rows: 45px repeat(3, minmax(0, 1fr)) 37px;
   border: 1px solid var(--line);
   border-radius: 7px;
   overflow: hidden;
@@ -273,22 +292,17 @@ main {
   color: var(--status-watch);
 }
 
-.column-head {
-  display: grid;
-  grid-template-columns: 86px 1fr 1fr;
-  align-items: end;
-  gap: var(--space-2);
-  padding: 0 var(--space-3) 3px 18px;
-  color: var(--text-muted);
-  font: 650 var(--type-micro) / 12px "Cascadia Mono", Consolas, monospace;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-
+/*
+ * The two windows stack vertically rather than sitting side by side. Each
+ * metric already names its own horizon ("5-hour session", "weekly"), so a
+ * column header explaining which side is which was redundant -- dropping it
+ * returned its 19px to the bands, and the full band width lets long window
+ * labels read without truncating.
+ */
 .provider {
   --provider: var(--brand);
   display: grid;
-  grid-template-columns: 86px 1fr 1fr;
+  grid-template-columns: 86px 1fr;
   grid-template-rows: 1fr 23px;
   gap: 0 var(--space-2);
   min-height: 0;
@@ -349,6 +363,15 @@ main {
   font: 500 var(--type-micro) / 13px "Cascadia Mono", Consolas, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Nested grid so the band itself keeps its simple "identity | body / note"
+   shape; the two equal rows share whatever height the band was given. */
+.metric-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  min-width: 0;
+  min-height: 0;
 }
 
 .metric {
@@ -976,6 +999,10 @@ main {
       background-color 120ms ease-out,
       border-color 120ms ease-out,
       transform 120ms ease-out;
+  }
+
+  #pin svg {
+    transition: transform 160ms ease-out;
   }
 }
 

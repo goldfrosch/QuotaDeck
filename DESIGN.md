@@ -93,6 +93,14 @@ All spacing uses a 4px base.
 - **Accessibility**: semantic header/main/nav regions; visible focus.
 - **Layout**: `scroll-body-shell`; the default Quotas body does not scroll.
 
+### Pin Toggle
+
+- **Structure**: leftmost of the three titlebar icon buttons, ahead of refresh and hide.
+- **States**: pinned (upright icon, brand tint, filled chip) and unpinned (tilted icon, muted, no chip).
+- **Accessibility**: `aria-pressed` carries the state; the label flips between "Keep on top" and "Unpin".
+- **Behaviour**: pinned holds the widget above full-screen apps; unpinned lets any window cover it. The choice persists across restarts and defaults to pinned.
+- **Motion**: 160ms icon rotation, suppressed under reduced motion.
+
 ### View Tabs
 
 - **Structure**: three buttons in one tablist: Quotas, Activity, Health.
@@ -113,7 +121,7 @@ All spacing uses a 4px base.
 - **Structure**: window label, percentage used, calibrated meter, status, reset time.
 - **Variants**: healthy, warning, critical, unknown.
 - **Accessibility**: `role="progressbar"`, numeric ARIA values, visible status text.
-- **Layout**: paired two-column metric grid. Additional windows move to provider details.
+- **Layout**: the band's two metrics stack vertically in a single column beside the provider identity. Each metric names its own horizon, so no column header is needed and the full band width is available to the label. Additional windows move to provider details.
 
 ### Technical Table
 

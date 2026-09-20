@@ -209,7 +209,7 @@ function renderBand(spec: ProviderSpec, result: QuotaResult | null, state: DeckS
 
   // Sources emit their windows shortest-first, so slots 0 and 1 are the two
   // horizons worth comparing across providers; anything further is a scoped or
-  // secondary cap and belongs in the note line rather than the grid.
+  // secondary cap and belongs in the note line rather than the stack.
   const extras = result.windows.slice(2).map((w) => `${w.label} ${clampPercent(w.utilization)}%`);
   const noteParts = [...extras, ...extraNotes(result)];
   const note =
@@ -219,8 +219,10 @@ function renderBand(spec: ProviderSpec, result: QuotaResult | null, state: DeckS
 
   return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(spec.name)} quota details">
     ${identity}
-    ${renderMetric(result.windows[0], now)}
-    ${renderMetric(result.windows[1], now)}
+    <div class="metric-stack">
+      ${renderMetric(result.windows[0], now)}
+      ${renderMetric(result.windows[1], now)}
+    </div>
     ${note}
   </article>`;
 }
@@ -268,7 +270,6 @@ function renderQuotas(state: DeckState): string {
       </div>
       <div class="freshness${live === PROVIDERS.length ? "" : " degraded"}">&#9679; ${live}/${PROVIDERS.length} live</div>
     </div>
-    <div class="column-head" aria-hidden="true"><span>provider</span><span>short window</span><span>long window</span></div>
     ${bands}
     <footer class="rack-footer">
       <span class="provider-dots" aria-hidden="true">${dots}</span>
@@ -475,6 +476,21 @@ function render(state: DeckState): void {
   (el("refresh") as HTMLButtonElement).disabled = busy;
 }
 
+/* -------------------------------------------------------------------- pin */
+
+/**
+ * The button is the single source of truth for pin state in the renderer:
+ * `aria-pressed` drives both the screen-reader announcement and the CSS, so
+ * there is no second copy to drift out of sync with the main process.
+ */
+function paintPin(value: boolean): void {
+  const button = el("pin");
+  button.setAttribute("aria-pressed", String(value));
+  const label = value ? "Unpin -- let other windows cover this" : "Keep on top";
+  button.setAttribute("title", label);
+  button.setAttribute("aria-label", label);
+}
+
 /* ------------------------------------------------------------------- boot */
 
 const TABS: readonly string[] = ["tab-quotas", "tab-activity", "tab-health"];
@@ -541,9 +557,14 @@ function boot(): void {
     if (action !== undefined) void runAction(action);
   });
 
+  el("pin").addEventListener("click", () => {
+    const next = el("pin").getAttribute("aria-pressed") !== "true";
+    void window.deck.setPinned(next).then(paintPin);
+  });
   el("refresh").addEventListener("click", () => void runAction("refresh"));
   el("hide").addEventListener("click", () => window.deck.hide());
 
+  void window.deck.pinned().then(paintPin);
   window.deck.onUpdate(render);
   void window.deck.get().then(render);
 }
