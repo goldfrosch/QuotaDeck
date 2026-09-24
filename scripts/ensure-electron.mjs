@@ -12,10 +12,10 @@
  * no-op when the binary is already there.
  */
 
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 
@@ -41,9 +41,13 @@ if (existsSync(binary)) {
 }
 
 console.log("electron runtime missing -- downloading...");
-await import(pathToFileURL(join(electronDir, "install.js")).href);
+// install.js kicks the download off from a promise it never awaits, so
+// importing it returns before a single byte has landed. As its own process it
+// exits only once the download and extraction are done -- the same way
+// electron's index.js runs it.
+const result = spawnSync(process.execPath, [join(electronDir, "install.js")], { stdio: "inherit" });
 
-if (!existsSync(binary)) {
+if (result.status !== 0 || !existsSync(binary)) {
   console.error("electron runtime still missing after install");
   process.exit(1);
 }
