@@ -1,0 +1,33 @@
+name: release
+
+# Push a v* tag (e.g. `npm version patch && git push --follow-tags`) to build
+# the portable exe and attach it to a GitHub Release for that tag.
+#
+# The asset name carries no version (build.portable.artifactName), so
+#   https://github.com/goldfrosch/QuotaDeck/releases/latest/download/quotadeck-portable.exe
+# always resolves to the newest build.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the pnpm version pinned by package.json#packageManager.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: pnpm install
+      - run: pnpm run dist
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/quotadeck-portable.exe --generate-notes
