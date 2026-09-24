@@ -56,7 +56,7 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "quotadeck-${version}-portable.exe"
+      "artifactName": "quotadeck-portable.exe"
     },
     "compression": "maximum"
   }
