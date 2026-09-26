@@ -26,6 +26,7 @@
     "@types/node": "^24.10.1",
     "electron": "^44.4.3",
     "electron-builder": "^26.0.12",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.3"
   },
@@ -49,7 +50,7 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
@@ -57,8 +58,15 @@
       ],
       "icon": "build/icon.ico"
     },
-    "portable": {
-      "artifactName": "quotadeck-portable.exe"
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "goldfrosch",
+        "repo": "QuotaDeck"
+      }
+    ],
+    "nsis": {
+      "artifactName": "quotadeck-setup.exe"
     },
     "compression": "maximum"
   }

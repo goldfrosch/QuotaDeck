@@ -1,11 +1,14 @@
 name: release
 
 # Push a v* tag (e.g. `npm version patch && git push --follow-tags`) to build
-# the portable exe and attach it to a GitHub Release for that tag.
+# the NSIS installer and attach it to a GitHub Release for that tag.
 #
-# The asset name carries no version (build.portable.artifactName), so
-#   https://github.com/goldfrosch/QuotaDeck/releases/latest/download/quotadeck-portable.exe
+# The asset name carries no version (build.nsis.artifactName), so
+#   https://github.com/goldfrosch/QuotaDeck/releases/latest/download/quotadeck-setup.exe
 # always resolves to the newest build.
+#
+# latest.yml and the .blockmap are what installed copies poll to update
+# themselves (electron-updater); a release without them is invisible to them.
 
 on:
   push:
@@ -30,4 +33,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/quotadeck-portable.exe --generate-notes
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release/quotadeck-setup.exe
+          release/quotadeck-setup.exe.blockmap
+          release/latest.yml
+          --generate-notes

@@ -10,6 +10,7 @@
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from "electron";
+import type { MenuItemConstructorOptions } from "electron";
 import { fileURLToPath } from "node:url";
 import { writeFile } from "node:fs/promises";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,6 +29,7 @@ import { CONFIG } from "../core/config.ts";
 import { PATHS } from "../core/paths.ts";
 import { gaugeIconPng, severityColour } from "./icon.ts";
 import { emptyState, worstUtilization } from "./state.ts";
+import { checkForUpdates, installAndExit, startUpdater, updateStatus } from "./updater.ts";
 import type { CustodyEntry, DeckState } from "./state.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,6 +94,42 @@ function applyPin(target: BrowserWindow, value: boolean): void {
 }
 
 /* ------------------------------------------------------------------ tray */
+
+/** The update entry mirrors the updater's state; absent in unpackaged runs. */
+function updateMenuItem(): MenuItemConstructorOptions {
+  const status = updateStatus();
+  switch (status.kind) {
+    case "checking":
+      return { label: "Checking for updates...", enabled: false };
+    case "downloading":
+      return { label: `Downloading ${status.version}...`, enabled: false };
+    case "ready":
+      return { label: `Restart to update to ${status.version}`, click: () => void installAndExit(true) };
+    case "error":
+      return { label: "Update check failed - retry", toolTip: status.message, click: checkForUpdates };
+    case "current":
+    case "idle":
+      return { label: `Check for updates (v${app.getVersion()})`, click: checkForUpdates };
+  }
+}
+
+function buildTrayMenu(withUpdates: boolean): Menu {
+  return Menu.buildFromTemplate([
+    { label: "Show / hide", click: toggleWindow },
+    { label: "Sync credentials now", click: () => void runCustodyTick(true) },
+    { label: "Refresh quota", click: () => void pollQuota() },
+    { type: "separator" },
+    ...(withUpdates ? [updateMenuItem(), { type: "separator" } as const] : []),
+    // A downloaded update installs on the way out instead of waiting for
+    // the next time the user remembers to quit.
+    {
+      label: "Quit",
+      click: () => {
+        if (!installAndExit(false)) app.exit(0);
+      },
+    },
+  ]);
+}
 
 function updateTray(): void {
   if (tray === null) return;
@@ -308,17 +346,19 @@ app.whenReady().then(async () => {
   pinned = loadPinned();
   wireIpc();
 
+  const smokeDir = process.env["QUOTADECK_SMOKE"];
+  const smoke = smokeDir !== undefined && smokeDir.length > 0;
+  const withUpdates = app.isPackaged && !smoke;
+
   tray = new Tray(nativeImage.createFromBuffer(gaugeIconPng(16, severityColour(0), 0)));
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Show / hide", click: toggleWindow },
-      { label: "Sync credentials now", click: () => void runCustodyTick(true) },
-      { label: "Refresh quota", click: () => void pollQuota() },
-      { type: "separator" },
-      { label: "Quit", click: () => app.exit(0) },
-    ]),
-  );
+  tray.setContextMenu(buildTrayMenu(withUpdates));
   tray.on("click", toggleWindow);
+  if (withUpdates) {
+    // Windows only shows toasts for an app with a registered AppUserModelID;
+    // the NSIS installer registers exactly this one on the Start menu shortcut.
+    app.setAppUserModelId("dev.quotadeck.app");
+    startUpdater(() => tray?.setContextMenu(buildTrayMenu(true)));
+  }
 
   win = createWindow();
 
@@ -333,8 +373,7 @@ app.whenReady().then(async () => {
   }
   await pollQuota();
 
-  const smokeDir = process.env["QUOTADECK_SMOKE"];
-  if (smokeDir !== undefined && smokeDir.length > 0 && win !== null) {
+  if (smoke && smokeDir !== undefined && win !== null) {
     await runSmoke(win, smokeDir);
   }
 });

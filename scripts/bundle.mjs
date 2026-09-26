@@ -30,6 +30,9 @@ await build({
   platform: "node",
   format: "esm",
   external: ["electron"],
+  // electron-updater is CommonJS and require()s node builtins and electron.
+  // esbuild's ESM output has no `require`, so hand it a real one.
+  banner: { js: "import { createRequire as __qdCreateRequire } from 'node:module'; const require = __qdCreateRequire(import.meta.url);" },
   outfile: join(dist, "main.mjs"),
 });
 
