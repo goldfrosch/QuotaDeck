@@ -4,7 +4,15 @@
  * push across the context bridge.
  */
 
-import type { CustodyAction, EpochMs, LocalUsage, QuotaResult, StoreSnapshot, StoreId } from "../core/types.ts";
+import type {
+  CustodyAction,
+  EpochMs,
+  LocalUsage,
+  QuotaResult,
+  StoreConfigStatus,
+  StoreSnapshot,
+  StoreId,
+} from "../core/types.ts";
 
 export interface CustodyEntry {
   readonly storeId: StoreId;
@@ -27,6 +35,8 @@ export interface DeckState {
   readonly local: LocalUsage | null;
   readonly localError: string | null;
   readonly stores: readonly StoreSnapshot[];
+  /** How the user's stores.json was applied; null until the first store poll. */
+  readonly storeConfig: StoreConfigStatus | null;
   readonly custody: CustodyReport | null;
   /** When the slow quota anchors were last refreshed. */
   readonly anchoredAt: EpochMs | null;
@@ -41,6 +51,7 @@ export function emptyState(): DeckState {
     local: null,
     localError: null,
     stores: [],
+    storeConfig: null,
     custody: null,
     anchoredAt: null,
   };

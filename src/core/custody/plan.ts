@@ -81,7 +81,7 @@ function findDonor(
   const floor = mineExpiresAt ?? 0;
   let best: Donor | null = null;
   for (const store of stores) {
-    if (store.storeId === exclude) continue;
+    if (store.storeId === exclude || !store.spec.donor) continue;
     for (const credential of store.credentials) {
       const record = credential.record;
       if (record.provider !== provider || record.kind !== "oauth") continue;

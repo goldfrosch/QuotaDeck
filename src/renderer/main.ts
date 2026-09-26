@@ -397,9 +397,10 @@ function renderHealth(state: DeckState, isBusy: boolean): string {
             const providers = [...new Set(store.records.map((r) => r.provider))].join(", ");
             const label = providers.length === 0 ? store.storeId : `${store.storeId} · ${providers}`;
             const expiry = storeExpiry(store, now);
+            const origin = store.source === "user" ? "from stores.json" : "built-in";
             return `<li class="health-line">
               <span class="pill${store.ownership === "observed" ? " observed" : ""}">${store.ownership}</span>
-              <span class="store" title="${escapeHtml(`${label}\n${store.path}`)}">${escapeHtml(label)}</span>
+              <span class="store" title="${escapeHtml(`${label}\n${store.path}\n${store.format} format, ${origin}`)}">${escapeHtml(label)}</span>
               <span class="expiry ${expiry.cls}">${escapeHtml(expiry.text)}</span>
             </li>`;
           })
@@ -416,6 +417,26 @@ function renderHealth(state: DeckState, isBusy: boolean): string {
     <small>${changed} updated &middot; ${failed} failed</small>
   </div>`;
 
+  // Where the store list came from, so a user who edited stores.json can see
+  // whether it took -- and why not, without opening a terminal.
+  const config = state.storeConfig;
+  const configBad = config !== null && (config.state === "invalid" || config.errors.length > 0);
+  const configState =
+    config === null
+      ? "not read"
+      : config.state === "absent"
+        ? "built-in defaults"
+        : config.state === "invalid"
+          ? "ignored (invalid)"
+          : "applied";
+  const configDetail =
+    config === null ? "" : config.errors.length > 0 ? `${config.errors.length} problem(s)` : config.state === "absent" ? "no file" : "ok";
+  const configTitle = config === null ? "" : [config.path, ...config.errors].join("\n");
+  const storeConfig = `<div class="custody-summary${configBad ? " bad" : ""}" title="${escapeHtml(configTitle)}">
+    <div><span>stores.json</span><strong>${escapeHtml(configState)}</strong></div>
+    <small>${escapeHtml(configDetail)}</small>
+  </div>`;
+
   const disabled = isBusy ? " disabled" : "";
   return `<header class="section-head">
       <h2>credential health</h2>
@@ -430,6 +451,7 @@ function renderHealth(state: DeckState, isBusy: boolean): string {
           <div class="health-stat"><span>last custody</span><strong>${escapeHtml(relative(report?.at ?? null, now))}</strong></div>
         </div>
         ${custody}
+        ${storeConfig}
       </section>
       <div class="health-actions">
         <button type="button" data-action="sync"${disabled}>${isBusy ? "working..." : "Sync credentials"}</button>

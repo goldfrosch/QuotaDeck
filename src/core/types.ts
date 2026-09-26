@@ -14,12 +14,16 @@
 /** Epoch milliseconds. */
 export type EpochMs = number;
 
-export type StoreId =
-  | "claude-code"
-  | "opencode-auth-xdg"
-  | "opencode-auth-localappdata"
-  | "opencode-account"
-  | "codex";
+/**
+ * Stores are data, not code: the built-in catalog in `catalog.ts` can be
+ * extended or overridden from `stores.json`, so an id is any string.
+ */
+export type StoreId = string;
+
+/** On-disk shape of a store. Each format has exactly one parser and writer. */
+export type StoreFormat = "claude-code" | "opencode-auth" | "opencode-account" | "codex";
+
+export const STORE_FORMATS: readonly StoreFormat[] = ["claude-code", "opencode-auth", "opencode-account", "codex"];
 
 /**
  * `observed` -> read-only. Another process owns refresh.
@@ -49,12 +53,23 @@ export interface CredentialRecord {
 
 export interface StoreSnapshot {
   readonly storeId: StoreId;
+  readonly format: StoreFormat;
+  /** Whether the entry came from the built-in catalog or the user's stores.json. */
+  readonly source: "builtin" | "user";
   readonly path: string;
   readonly ownership: Ownership;
   readonly exists: boolean;
   /** Null when the store parsed cleanly. */
   readonly error: string | null;
   readonly records: readonly CredentialRecord[];
+}
+
+/** Outcome of reading the user's stores.json, for display. */
+export interface StoreConfigStatus {
+  readonly path: string;
+  readonly state: "absent" | "loaded" | "invalid";
+  /** One line per rejected entry, or the parse error. Empty when clean. */
+  readonly errors: readonly string[];
 }
 
 /* ------------------------------------------------------------------ quota */

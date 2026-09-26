@@ -25,13 +25,23 @@ export interface ExecutionResult {
   readonly backupPath: string | null;
 }
 
-function applyFor(storeId: StoreId, root: unknown, provider: string, update: TokenUpdate): ApplyResult {
-  if (storeId === "opencode-account") return applyToAccountJson(root, provider, update);
-  if (storeId === "codex") return applyToCodexJson(root, update);
-  if (storeId === "opencode-auth-xdg" || storeId === "opencode-auth-localappdata") {
-    return applyToOpencodeAuthJson(root, provider, update);
+/**
+ * `provider` is canonical; the file may spell it differently, so the writer
+ * gets the host tool's own name back via the store's alias map.
+ */
+function applyFor(store: LoadedStore, root: unknown, provider: string, update: TokenUpdate): ApplyResult {
+  const aliases = store.spec.providerAliases;
+  const native = Object.keys(aliases).find((name) => aliases[name] === provider) ?? provider;
+  switch (store.spec.format) {
+    case "opencode-account":
+      return applyToAccountJson(root, native, update);
+    case "codex":
+      return applyToCodexJson(root, update);
+    case "opencode-auth":
+      return applyToOpencodeAuthJson(root, native, update);
+    case "claude-code":
+      return { ok: false, error: `no writer for format "${store.spec.format}" (store "${store.storeId}")` };
   }
-  return { ok: false, error: `no writer registered for store "${storeId}"` };
 }
 
 function donorCredential(
@@ -178,7 +188,7 @@ export async function runCustody(
           results.push({ item, action: resolved.action, detail: resolved.error, newFingerprint: null, newExpiresAt: null, backupPath: null });
           continue;
         }
-        const applied = applyFor(storeId, root, item.provider, resolved.update);
+        const applied = applyFor(store, root, item.provider, resolved.update);
         if (!applied.ok) {
           results.push({ item, action: "failed", detail: applied.error, newFingerprint: null, newExpiresAt: null, backupPath: null });
           continue;

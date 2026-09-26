@@ -15,6 +15,8 @@ import { writeFile } from "node:fs/promises";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadAllStores, pickCredential, snapshot } from "../core/stores.ts";
+import { loadCatalog } from "../core/catalog.ts";
+import { fetchFromFreshest } from "../core/sources/anchor.ts";
 import type { LoadedStore } from "../core/stores.ts";
 import { fetchClaudeQuota } from "../core/sources/claude-quota.ts";
 import { fetchCodexQuota } from "../core/sources/codex-quota.ts";
@@ -22,7 +24,6 @@ import { fetchZaiQuota } from "../core/sources/zai-quota.ts";
 import { OpencodeDbUnavailable, readLocalUsage } from "../core/sources/opencode-db.ts";
 import { planCustody } from "../core/custody/plan.ts";
 import { runCustody } from "../core/custody/run.ts";
-import { asString, child } from "../core/json.ts";
 import { CONFIG } from "../core/config.ts";
 import { PATHS } from "../core/paths.ts";
 import { gaugeIconPng, severityColour } from "./icon.ts";
@@ -120,7 +121,8 @@ function pollLocal(): void {
 }
 
 function pollStores(): void {
-  publish({ stores: loadAllStores().map(snapshot) });
+  const catalog = loadCatalog();
+  publish({ stores: loadAllStores(catalog.specs).map(snapshot), storeConfig: catalog.config });
 }
 
 /**
@@ -141,16 +143,9 @@ function zaiKey(stores: readonly LoadedStore[]): string | null {
 
 async function pollQuota(): Promise<void> {
   const stores = loadAllStores();
-  const claudeStore = stores.find((s) => s.storeId === "claude-code");
-  const codexStore = stores.find((s) => s.storeId === "codex");
-  const codexTokens = codexStore === undefined ? null : child(codexStore.raw, "tokens");
-
   const [claude, codex, zai] = await Promise.all([
-    fetchClaudeQuota(claudeStore ? (pickCredential(claudeStore, "anthropic")?.accessToken ?? null) : null),
-    fetchCodexQuota(
-      codexStore ? (pickCredential(codexStore, "openai")?.accessToken ?? null) : null,
-      codexTokens === null ? null : asString(codexTokens["account_id"]),
-    ),
+    fetchFromFreshest(stores, "anthropic", (c) => fetchClaudeQuota(c?.accessToken ?? null)),
+    fetchFromFreshest(stores, "openai", (c) => fetchCodexQuota(c?.accessToken ?? null, c?.accountId ?? null)),
     fetchZaiQuota(zaiKey(stores)),
   ]);
   publish({ claude, codex, zai, anchoredAt: Date.now() });

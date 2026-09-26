@@ -8,15 +8,15 @@
  * is a diagnostic, not something to loop on.
  */
 
-import { loadAllStores, pickCredential, snapshot } from "../core/stores.ts";
+import { loadAllStores, snapshot } from "../core/stores.ts";
+import { loadCatalog } from "../core/catalog.ts";
+import { fetchFromFreshest } from "../core/sources/anchor.ts";
 import { fetchClaudeQuota } from "../core/sources/claude-quota.ts";
 import { fetchCodexQuota } from "../core/sources/codex-quota.ts";
 import { OpencodeDbUnavailable, readLocalUsage } from "../core/sources/opencode-db.ts";
-import { ownershipFor } from "../core/paths.ts";
 import { expiryState, relative, stamp } from "../core/time.ts";
-import { asString, child } from "../core/json.ts";
 import type { LoadedStore } from "../core/stores.ts";
-import type { QuotaResult } from "../core/types.ts";
+import type { QuotaResult, StoreConfigStatus } from "../core/types.ts";
 
 const WIDTH = 26;
 
@@ -30,8 +30,10 @@ function heading(text: string): void {
   console.log(`\n${text}\n${"-".repeat(text.length)}`);
 }
 
-function printStores(stores: readonly LoadedStore[]): void {
+function printStores(stores: readonly LoadedStore[], config: StoreConfigStatus): void {
   heading("CREDENTIAL STORES");
+  console.log(`  stores.json: ${config.state} ${config.path}`);
+  for (const error of config.errors) console.log(`    ! ${error}`);
   for (const store of stores) {
     const view = snapshot(store);
     if (!view.exists) {
@@ -42,14 +44,14 @@ function printStores(stores: readonly LoadedStore[]): void {
       console.log(`  ${store.storeId.padEnd(28)} ERROR: ${view.error ?? "unknown"}`);
       continue;
     }
-    console.log(`  ${store.storeId}`);
+    console.log(`  ${store.storeId} [${view.format}, ${view.source}] ${view.path}`);
     for (const record of view.records) {
       const state = expiryState(record.expiresAt);
       const flag =
         state === "expired" ? "EXPIRED" : state === "expiring" ? "EXPIRING" : state === "fresh" ? "ok" : "-";
       const label = record.label === null ? "" : ` (${record.label})`;
       const fp = record.accessFingerprint ?? "-";
-      const owner = ownershipFor(store.storeId, record.provider) === "owned" ? "OWNED " : "observe";
+      const owner = record.ownership === "owned" ? "OWNED " : "observe";
       console.log(
         `    ${owner} ${record.provider.padEnd(18)} ${record.kind.padEnd(5)} ${flag.padEnd(9)}` +
           ` ${stamp(record.expiresAt).padEnd(12)} ${relative(record.expiresAt).padEnd(14)}` +
@@ -104,20 +106,13 @@ function printLocalUsage(windowHours: number): void {
 }
 
 async function main(): Promise<void> {
-  const stores = loadAllStores();
-  printStores(stores);
-
-  const claudeStore = stores.find((s) => s.storeId === "claude-code");
-  const claudeToken = claudeStore ? (pickCredential(claudeStore, "anthropic")?.accessToken ?? null) : null;
-
-  const codexStore = stores.find((s) => s.storeId === "codex");
-  const codexCred = codexStore ? pickCredential(codexStore, "openai") : null;
-  const codexTokens = codexStore === undefined ? null : child(codexStore.raw, "tokens");
-  const codexAccountId = codexTokens === null ? null : asString(codexTokens["account_id"]);
+  const catalog = loadCatalog();
+  const stores = loadAllStores(catalog.specs);
+  printStores(stores, catalog.config);
 
   const [claude, codex] = await Promise.all([
-    fetchClaudeQuota(claudeToken),
-    fetchCodexQuota(codexCred?.accessToken ?? null, codexAccountId),
+    fetchFromFreshest(stores, "anthropic", (c) => fetchClaudeQuota(c?.accessToken ?? null)),
+    fetchFromFreshest(stores, "openai", (c) => fetchCodexQuota(c?.accessToken ?? null, c?.accountId ?? null)),
   ]);
 
   printQuota("CLAUDE QUOTA (api.anthropic.com/api/oauth/usage)", claude);

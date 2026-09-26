@@ -7,13 +7,17 @@
  *  - opencode's v2 account store (account.json) is written by opencode itself
  *    and by nothing else -- the auth plugin has zero references to it.
  *  - Codex keeps its own auth.json under CODEX_HOME.
+ *  - omo native keeps its own auth.json under its agent dir
+ *    (OMO_CODING_AGENT_DIR, default ~/.omo/agent).
+ *
+ * These are only the *defaults* of the built-in store catalog. Users relocate
+ * or extend it through stores.json -- see catalog.ts.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Ownership, StoreId } from "./types.ts";
 
-const HOME = homedir();
+export const HOME = homedir();
 
 function xdgDataHome(): string {
   const raw = process.env["XDG_DATA_HOME"];
@@ -35,6 +39,14 @@ function codexHome(): string {
   return raw && raw.length > 0 ? raw : join(HOME, ".codex");
 }
 
+function omoAgentDir(): string {
+  for (const key of ["OMO_CODING_AGENT_DIR", "SENPI_CODING_AGENT_DIR"]) {
+    const raw = process.env[key];
+    if (raw && raw.length > 0) return raw;
+  }
+  return join(HOME, ".omo", "agent");
+}
+
 const OPENCODE_DATA = join(xdgDataHome(), "opencode");
 const QUOTADECK_STATE = join(xdgDataHome(), "quotadeck");
 
@@ -45,6 +57,7 @@ export const PATHS = {
   opencodeAccount: join(OPENCODE_DATA, "account.json"),
   opencodeDb: join(OPENCODE_DATA, "opencode.db"),
   codexAuth: join(codexHome(), "auth.json"),
+  omoAgentAuth: join(omoAgentDir(), "auth.json"),
   /**
    * Where opencode-claude-auth puts its advisory refresh lock. We honour the
    * same directory so a future write path can join its single-flight protocol
@@ -62,49 +75,10 @@ export const PATHS = {
 } as const;
 
 /**
- * Ownership is per (store, provider), not per store.
- *
- * An earlier version keyed this by store alone and that was wrong in a way
- * that caused real damage: `opencode-claude-auth` owns only the **anthropic**
- * entry inside opencode's auth.json, but treating the whole file as foreign
- * meant quotadeck could strand the openai entry in it -- it copied that
- * entry's refresh token into Codex, Codex rotated it, and opencode was left
- * holding a dead grant it was never allowed to repair.
+ * The user's store catalog overrides. Resolved per call, not at import, so a
+ * `QUOTADECK_STORES_FILE` set in `.env` (loaded after this module) still wins.
  */
-const FOREIGN_OWNED: ReadonlySet<string> = new Set([
-  // The `claude` CLI and the opencode-claude-auth plugin already implement
-  // locking, proactive refresh, rotation adoption and 401 recovery for these.
-  "claude-code:anthropic",
-  "opencode-auth-xdg:anthropic",
-  "opencode-auth-localappdata:anthropic",
-]);
-
-export function ownershipFor(storeId: StoreId, provider: string): Ownership {
-  return FOREIGN_OWNED.has(`${storeId}:${provider}`) ? "observed" : "owned";
+export function storesConfigPath(): string {
+  const raw = process.env["QUOTADECK_STORES_FILE"];
+  return raw && raw.length > 0 ? raw : join(QUOTADECK_STATE, "stores.json");
 }
-
-/** Coarse per-store view, for display only. A store is "observed" when every
- *  provider in it is foreign-owned. */
-export const STORE_IS_FULLY_OBSERVED: Readonly<Record<StoreId, boolean>> = {
-  "claude-code": true,
-  "opencode-auth-xdg": false,
-  "opencode-auth-localappdata": false,
-  "opencode-account": false,
-  codex: false,
-} as const;
-
-export const STORE_PATHS: Readonly<Record<StoreId, string>> = {
-  "claude-code": PATHS.claudeCredentials,
-  "opencode-auth-xdg": PATHS.opencodeAuthXdg,
-  "opencode-auth-localappdata": PATHS.opencodeAuthLocalAppData,
-  "opencode-account": PATHS.opencodeAccount,
-  codex: PATHS.codexAuth,
-} as const;
-
-export const ALL_STORE_IDS: readonly StoreId[] = [
-  "claude-code",
-  "opencode-auth-xdg",
-  "opencode-auth-localappdata",
-  "opencode-account",
-  "codex",
-] as const;

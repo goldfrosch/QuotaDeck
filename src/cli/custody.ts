@@ -12,7 +12,7 @@
 import { loadAllStores } from "../core/stores.ts";
 import { planCustody } from "../core/custody/plan.ts";
 import { runCustody } from "../core/custody/run.ts";
-import { ALL_STORE_IDS, STORE_PATHS } from "../core/paths.ts";
+import { loadCatalog } from "../core/catalog.ts";
 import { expiryState, relative, stamp } from "../core/time.ts";
 
 function heading(text: string): void {
@@ -21,20 +21,23 @@ function heading(text: string): void {
 
 function main(): Promise<void> {
   const apply = process.argv.includes("--apply");
-  const stores = loadAllStores();
+  const catalog = loadCatalog();
+  const stores = loadAllStores(catalog.specs);
 
   heading("OWNERSHIP (per store / provider)");
-  for (const storeId of ALL_STORE_IDS) {
-    const store = stores.find((s) => s.storeId === storeId);
-    const oauth = store?.credentials.filter((c) => c.record.kind === "oauth") ?? [];
+  console.log(`  stores.json: ${catalog.config.state} ${catalog.config.path}`);
+  for (const error of catalog.config.errors) console.log(`    ! ${error}`);
+  for (const store of stores) {
+    const oauth = store.credentials.filter((c) => c.record.kind === "oauth");
     const summary =
       oauth.length === 0
         ? "(no oauth credentials)"
         : oauth
             .map((c) => `${c.record.provider}=${c.record.ownership === "owned" ? "OWNED" : "observed"}`)
             .join(" ");
-    console.log(`  ${storeId.padEnd(28)} ${summary}`);
-    console.log(`  ${"".padEnd(28)} ${STORE_PATHS[storeId]}`);
+    const donor = store.spec.donor ? "" : " (never a donor)";
+    console.log(`  ${store.storeId.padEnd(28)} ${summary}${donor}`);
+    console.log(`  ${"".padEnd(28)} ${store.path}`);
   }
   console.log("\n  observed = another process rotates it; quotadeck never writes that credential.");
 
