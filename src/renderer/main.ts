@@ -12,7 +12,7 @@
  */
 
 import type { DeckApi } from "../electron/preload.ts";
-import type { DeckState } from "../electron/state.ts";
+import type { DeckState, QuotaAnchor } from "../electron/state.ts";
 import type { LocalUsage, QuotaResult, QuotaWindow, StoreSnapshot } from "../core/types.ts";
 
 declare global {
@@ -129,12 +129,23 @@ function failureText(result: Extract<QuotaResult, { ok: false }>): string {
     case "credentials-expired":
       return "credentials expired -- run Sync credentials";
     case "rate-limited":
-      return "rate limited; backing off";
+      return "rate limited";
     case "no-plan":
       return "no subscription on this key";
     default:
       return result.detail;
   }
+}
+
+/**
+ * Why a band is not live, how old the numbers still on it are, and when the
+ * next call may go out: "rate limited · data 25m ago · retry in 12m".
+ */
+function downText(anchor: QuotaAnchor, failure: Extract<QuotaResult, { ok: false }>, now: number): string {
+  const parts = [failureText(failure)];
+  if (anchor.lastGood !== null) parts.push(`data ${relative(anchor.lastGood.fetchedAt, now)}`);
+  if (anchor.retryAt !== null) parts.push(anchor.retryAt > now ? `retry ${relative(anchor.retryAt, now)}` : "retry soon");
+  return parts.join(" · ");
 }
 
 /* ------------------------------------------------------------ quota rack */
@@ -195,54 +206,61 @@ function localCalls(state: DeckState, id: ProviderId): number {
   return total;
 }
 
-function renderBand(spec: ProviderSpec, result: QuotaResult | null, state: DeckState, now: number): string {
-  const plan = planLabel(spec, result, state);
+function renderBand(spec: ProviderSpec, anchor: QuotaAnchor, state: DeckState, now: number): string {
+  const { latest, lastGood: reading } = anchor;
+  const failure = latest !== null && !latest.ok ? latest : null;
+  const plan = planLabel(spec, reading, state);
   const identity = `<div class="provider-id">
     <span class="monogram">${spec.monogram}</span>
     <span class="provider-name">${escapeHtml(spec.name)}</span>
     <span class="provider-plan" title="${escapeHtml(plan ?? "")}">${escapeHtml(plan ?? "")}</span>
   </div>`;
 
-  if (result === null) {
-    return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(spec.name)} quota, waiting">
+  if (reading === null) {
+    if (failure === null) {
+      return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(spec.name)} quota, waiting">
       ${identity}
       <div class="provider-status waiting">waiting for first anchor...</div>
     </article>`;
-  }
-
-  if (!result.ok) {
-    const text = failureText(result);
+    }
+    const text = downText(anchor, failure, now);
     return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(`${spec.name} quota unavailable: ${text}`)}">
       ${identity}
-      <div class="provider-status bad" title="${escapeHtml(result.detail)}">${escapeHtml(text)}</div>
+      <div class="provider-status bad" title="${escapeHtml(failure.detail)}">${escapeHtml(text)}</div>
     </article>`;
   }
 
   // Sources emit their windows shortest-first, so slots 0 and 1 are the two
   // horizons worth comparing across providers; anything further is a scoped or
   // secondary cap and belongs in the note line rather than the stack.
-  const extras = result.windows.slice(2).map((w) => `${w.label} ${clampPercent(w.utilization)}%`);
+  const extras = reading.windows.slice(2).map((w) => `${w.label} ${clampPercent(w.utilization)}%`);
   // Local calls move every poll, so they show activity that a provider's
   // whole-percent meter can sit on for hours.
   const calls = localCalls(state, spec.id);
   const recent = calls > 0 ? [`${calls} msg in ${state.local?.windowHours ?? 0}h`] : [];
-  const noteParts = [...recent, ...extras, ...extraNotes(result)];
+  const noteParts = [...recent, ...extras, ...extraNotes(reading)];
+  // After a failed call the last good numbers stay up, and the note says how
+  // old they are and why -- a 429 must not look like a lost token.
+  const stale = failure === null ? null : { text: downText(anchor, failure, now), detail: failure.detail };
   const note =
-    noteParts.length === 0
-      ? `<div class="provider-note"><strong>anchored</strong>&nbsp;${escapeHtml(relative(result.fetchedAt, now))}</div>`
-      : `<div class="provider-note" title="${escapeHtml(noteParts.join(" · "))}">${escapeHtml(noteParts.join(" · "))}</div>`;
+    stale !== null
+      ? `<div class="provider-note stale" title="${escapeHtml(stale.detail)}">${escapeHtml(stale.text)}</div>`
+      : noteParts.length === 0
+        ? `<div class="provider-note"><strong>anchored</strong>&nbsp;${escapeHtml(relative(reading.fetchedAt, now))}</div>`
+        : `<div class="provider-note" title="${escapeHtml(noteParts.join(" · "))}">${escapeHtml(noteParts.join(" · "))}</div>`;
+  const label = stale === null ? `${spec.name} quota details` : `${spec.name} quota, stale: ${stale.text}`;
 
-  return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(spec.name)} quota details">
+  return `<article class="provider ${spec.id}" tabindex="0" aria-label="${escapeHtml(label)}">
     ${identity}
     <div class="metric-stack">
-      ${renderMetric(result.windows[0], now)}
-      ${renderMetric(result.windows[1], now)}
+      ${renderMetric(reading.windows[0], now)}
+      ${renderMetric(reading.windows[1], now)}
     </div>
     ${note}
   </article>`;
 }
 
-function resultFor(state: DeckState, id: ProviderId): QuotaResult | null {
+function anchorFor(state: DeckState, id: ProviderId): QuotaAnchor {
   return id === "claude" ? state.claude : id === "codex" ? state.codex : state.zai;
 }
 
@@ -253,10 +271,10 @@ function renderQuotas(state: DeckState): string {
   let peakWindow: QuotaWindow | null = null;
   let live = 0;
   for (const spec of PROVIDERS) {
-    const result = resultFor(state, spec.id);
-    if (result === null || !result.ok) continue;
-    live += 1;
-    for (const window of result.windows) {
+    const anchor = anchorFor(state, spec.id);
+    if (anchor.latest?.ok === true) live += 1;
+    // A stale reading is still the best evidence of where a limit stands.
+    for (const window of anchor.lastGood?.windows ?? []) {
       if (peakWindow === null || window.utilization > peakWindow.utilization) {
         peakWindow = window;
         peakName = spec.name;
@@ -271,10 +289,9 @@ function renderQuotas(state: DeckState): string {
           peakWindow.utilization,
         )}% used</span> &middot; resets ${escapeHtml(relative(peakWindow.resetsAt, now))}</strong>`;
 
-  const bands = PROVIDERS.map((spec) => renderBand(spec, resultFor(state, spec.id), state, now)).join("");
+  const bands = PROVIDERS.map((spec) => renderBand(spec, anchorFor(state, spec.id), state, now)).join("");
   const dots = PROVIDERS.map((spec) => {
-    const result = resultFor(state, spec.id);
-    const down = result === null || !result.ok ? " down" : "";
+    const down = anchorFor(state, spec.id).latest?.ok === true ? "" : " down";
     return `<i class="provider-dot ${spec.id}${down}"></i>`;
   }).join("");
 

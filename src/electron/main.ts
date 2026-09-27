@@ -7,6 +7,11 @@
  * a multi-minute cadence. The local opencode database and omo's session logs
  * cost nothing to read and carry the fast path, so the widget still moves every
  * couple of seconds between anchors.
+ *
+ * A failed anchor never blanks a band: the last good reading stays up, marked
+ * stale, and a 429 pushes that provider's next call out exponentially. Both
+ * survive a restart. anchors.ts has the why -- the "vanishing token" of
+ * 2026-09-27 was a 429 every time.
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from "electron";
@@ -29,9 +34,11 @@ import { runCustody } from "../core/custody/run.ts";
 import { CONFIG } from "../core/config.ts";
 import { PATHS } from "../core/paths.ts";
 import { gaugeIconPng, severityColour } from "./icon.ts";
+import { advanceAnchor, isDue, loadAnchors, newestReading, saveAnchors } from "./anchors.ts";
 import { emptyState, worstUtilization } from "./state.ts";
 import { checkForUpdates, installAndExit, startUpdater, updateStatus } from "./updater.ts";
-import type { CustodyEntry, DeckState } from "./state.ts";
+import type { QuotaResult } from "../core/types.ts";
+import type { CustodyEntry, DeckState, QuotaAnchor } from "./state.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -137,11 +144,12 @@ function updateTray(): void {
   const worst = worstUtilization(state);
   const png = gaugeIconPng(16, severityColour(worst), worst / 100);
   tray.setImage(nativeImage.createFromBuffer(png));
-  const claude = state.claude?.ok === true ? state.claude.windows[0] : undefined;
+  const claude = state.claude.lastGood?.windows[0];
+  const stale = state.claude.latest?.ok === true ? "" : " (stale)";
   tray.setToolTip(
     claude === undefined
       ? "quotadeck -- no quota data yet"
-      : `quotadeck -- Claude ${claude.label} ${claude.utilization}%`,
+      : `quotadeck -- Claude ${claude.label} ${claude.utilization}%${stale}`,
   );
 }
 
@@ -183,14 +191,31 @@ function zaiKey(stores: readonly LoadedStore[]): string | null {
   return null;
 }
 
-async function pollQuota(): Promise<void> {
+/**
+ * Calls every provider that is due. One backing off from a 429 is skipped for
+ * every caller, the refresh button included: clicking through a 429 only
+ * extends it. `freshForMs` also skips a provider whose last good reading is
+ * younger than that -- boot passes the poll interval, so a restart does not
+ * re-spend the call it just made.
+ */
+async function pollQuota(freshForMs = 0): Promise<void> {
+  const now = Date.now();
+  const due = (anchor: QuotaAnchor): boolean => isDue(anchor, now, freshForMs);
   const stores = loadAllStores();
   const [claude, codex, zai] = await Promise.all([
-    fetchFromFreshest(stores, "anthropic", (c) => fetchClaudeQuota(c?.accessToken ?? null)),
-    fetchFromFreshest(stores, "openai", (c) => fetchCodexQuota(c?.accessToken ?? null, c?.accountId ?? null)),
-    fetchZaiQuota(zaiKey(stores)),
+    due(state.claude) ? fetchFromFreshest(stores, "anthropic", (c) => fetchClaudeQuota(c?.accessToken ?? null)) : null,
+    due(state.codex)
+      ? fetchFromFreshest(stores, "openai", (c) => fetchCodexQuota(c?.accessToken ?? null, c?.accountId ?? null))
+      : null,
+    due(state.zai) ? fetchZaiQuota(zaiKey(stores)) : null,
   ]);
-  publish({ claude, codex, zai, anchoredAt: Date.now() });
+  if (claude === null && codex === null && zai === null) return;
+  const at = Date.now();
+  const fold = (anchor: QuotaAnchor, result: QuotaResult | null): QuotaAnchor =>
+    result === null ? anchor : advanceAnchor(anchor, result, at);
+  const anchors = { claude: fold(state.claude, claude), codex: fold(state.codex, codex), zai: fold(state.zai, zai) };
+  saveAnchors(anchors);
+  publish({ ...anchors, anchoredAt: newestReading(anchors) });
 }
 
 async function runCustodyTick(apply: boolean): Promise<void> {
@@ -357,6 +382,10 @@ app.whenReady().then(async () => {
   tray = new Tray(nativeImage.createFromBuffer(gaugeIconPng(16, severityColour(0), 0)));
   tray.setContextMenu(buildTrayMenu(withUpdates));
   tray.on("click", toggleWindow);
+  // Last session's readings -- and any 429 backoff -- are on screen before the
+  // first call goes out, and often instead of it.
+  const restored = loadAnchors();
+  publish({ ...restored, anchoredAt: newestReading(restored) });
   if (withUpdates) {
     // Windows only shows toasts for an app with a registered AppUserModelID;
     // the NSIS installer registers exactly this one on the Start menu shortcut.
@@ -375,7 +404,7 @@ app.whenReady().then(async () => {
     setInterval(() => void runCustodyTick(true), POLL.custodyMs);
     await runCustodyTick(true);
   }
-  await pollQuota();
+  await pollQuota(POLL.quotaMs);
 
   if (smoke && smokeDir !== undefined && win !== null) {
     await runSmoke(win, smokeDir);

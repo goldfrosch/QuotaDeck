@@ -11,7 +11,10 @@
  *  1. It is aggressively rate limited per access token (a handful of calls
  *     before 429, usually with no `retry-after`). Callers must poll on the
  *     order of minutes, not seconds, and treat this as the slow *anchor* while
- *     local DB deltas carry the fast path.
+ *     local DB deltas carry the fast path. Since about March 2026 such a 429
+ *     can persist for hours, with `retry-after: 0` or none
+ *     (anthropics/claude-code#30930, #31637), so the main process backs off
+ *     and keeps the last good reading on screen (src/electron/anchors.ts).
  *
  *  2. The User-Agent requirements of the two Anthropic endpoints are opposite:
  *     this one wants a `claude-cli/*` UA, while the OAuth *token* endpoint

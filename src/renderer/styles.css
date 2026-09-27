@@ -536,6 +536,21 @@ main {
   font-weight: 600;
 }
 
+/*
+ * A stale band keeps its last good numbers up; this line names why they are
+ * old and when the next call may go out. Words, shape and colour together --
+ * the same pairing the watch state uses.
+ */
+.provider-note.stale {
+  color: var(--status-watch);
+}
+
+.provider-note.stale::before {
+  content: "\25b2";
+  margin-inline-end: 3px;
+  font-size: 7px;
+}
+
 .rack-footer {
   display: flex;
   align-items: center;

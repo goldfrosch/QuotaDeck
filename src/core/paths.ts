@@ -80,6 +80,12 @@ export const PATHS = {
    * every launch.
    */
   uiSettings: join(QUOTADECK_STATE, "ui.json"),
+  /**
+   * Each provider's last good quota reading and 429 backoff, so a restart
+   * neither blanks the bands nor spends a scarce call on a reading that is
+   * still fresh. Quota results only, never a token.
+   */
+  quotaAnchors: join(QUOTADECK_STATE, "anchors.json"),
 } as const;
 
 /**

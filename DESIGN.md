@@ -115,6 +115,7 @@ All spacing uses a 4px base.
 - **States**: default, hover, focus, unavailable.
 - **Accessibility**: the complete row is one keyboard target; provider monogram is decorative.
 - **Layout**: fixed-height row; no hover expansion and no data-driven reordering.
+- **Stale**: a failed call never blanks the band. The last good reading stays, and the status line switches to the warning colour and ▲ shape, naming the failure, the reading's age and the next retry ("rate limited · data 25m ago · retry in 12m").
 
 ### Quota Metric
 
