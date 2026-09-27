@@ -15,7 +15,7 @@
  *         "id": "work-omo",
  *         "format": "opencode-auth",
  *         "path": "~/work/.omo/agent/auth.json",
- *         "providerAliases": { "chatgpt-subscription": "openai" }
+ *         "providerAliases": { "chatgpt-subscription": "openai", "anthropic-subscription": "anthropic" }
  *       }
  *     ]
  *   }
@@ -120,7 +120,7 @@ const BUILTIN: readonly StoreSpec[] = [
     format: "opencode-auth",
     path: PATHS.omoAgentAuth,
     source: "builtin",
-    providerAliases: { "chatgpt-subscription": "openai" },
+    providerAliases: { "chatgpt-subscription": "openai", "anthropic-subscription": "anthropic" },
     observed: "all",
     donor: false,
   },

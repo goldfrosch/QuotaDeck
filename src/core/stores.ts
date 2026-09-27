@@ -91,14 +91,37 @@ function parseClaudeCode(root: unknown): Draft[] {
   ];
 }
 
-/** `{ [provider]: { type: "oauth", access, refresh, expires } | { type: "api", key } }` */
+/**
+ * `{ [provider]: { type: "oauth", access, refresh, expires } | { type: "api", key } }`
+ *
+ * omo native turns an oauth entry into a credential pool: the real grants sit
+ * in `accounts: [{ name, access, refresh, expires, source }]`, while the
+ * entry's own `access`/`refresh` hold a placeholder with a year-2100 expiry.
+ * Reading the placeholder would make it the "freshest" token and send it to
+ * the quota endpoint, so a pooled entry yields one record per account instead.
+ */
 function parseOpencodeAuth(root: unknown): Draft[] {
   if (!isRecord(root)) return [];
   const out: Draft[] = [];
   for (const [provider, value] of Object.entries(root)) {
     if (!isRecord(value)) continue;
     const type = asString(value["type"]);
-    if (type === "oauth") {
+    const pool = value["accounts"];
+    if (type === "oauth" && Array.isArray(pool)) {
+      for (const account of pool) {
+        if (!isRecord(account)) continue;
+        out.push({
+          provider,
+          kind: "oauth",
+          label: asString(account["name"]),
+          expiresAt: asEpochMs(account["expires"]),
+          refreshExpiresAt: null,
+          accessToken: asString(account["access"]),
+          refreshToken: asString(account["refresh"]),
+          accountId: asString(account["accountId"]),
+        });
+      }
+    } else if (type === "oauth") {
       out.push({
         provider,
         kind: "oauth",
