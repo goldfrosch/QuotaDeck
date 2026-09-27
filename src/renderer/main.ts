@@ -59,10 +59,12 @@ const PROVIDERS: readonly ProviderSpec[] = [
   },
 ];
 
-/** Maps a `providerID/modelID` prefix onto the band that owns it. */
+/** Maps a `providerID/modelID` prefix onto the band that owns it (opencode and omo spellings). */
 const ROUTE_CLASS: Readonly<Record<string, ProviderId>> = {
   anthropic: "claude",
+  "anthropic-subscription": "claude",
   openai: "codex",
+  "chatgpt-subscription": "codex",
   zai: "zai",
   "zai-coding-plan": "zai",
 };
@@ -184,6 +186,15 @@ function renderMetric(window: QuotaWindow | undefined, now: number): string {
   </div>`;
 }
 
+/** Assistant calls this band's providers made inside the local window. */
+function localCalls(state: DeckState, id: ProviderId): number {
+  let total = 0;
+  for (const bucket of state.local?.buckets ?? []) {
+    if (ROUTE_CLASS[bucket.key.split("/")[0] ?? ""] === id) total += bucket.messages;
+  }
+  return total;
+}
+
 function renderBand(spec: ProviderSpec, result: QuotaResult | null, state: DeckState, now: number): string {
   const plan = planLabel(spec, result, state);
   const identity = `<div class="provider-id">
@@ -211,7 +222,11 @@ function renderBand(spec: ProviderSpec, result: QuotaResult | null, state: DeckS
   // horizons worth comparing across providers; anything further is a scoped or
   // secondary cap and belongs in the note line rather than the stack.
   const extras = result.windows.slice(2).map((w) => `${w.label} ${clampPercent(w.utilization)}%`);
-  const noteParts = [...extras, ...extraNotes(result)];
+  // Local calls move every poll, so they show activity that a provider's
+  // whole-percent meter can sit on for hours.
+  const calls = localCalls(state, spec.id);
+  const recent = calls > 0 ? [`${calls} msg in ${state.local?.windowHours ?? 0}h`] : [];
+  const noteParts = [...recent, ...extras, ...extraNotes(result)];
   const note =
     noteParts.length === 0
       ? `<div class="provider-note"><strong>anchored</strong>&nbsp;${escapeHtml(relative(result.fetchedAt, now))}</div>`
@@ -307,7 +322,7 @@ function routeShares(usage: LocalUsage): readonly RouteShare[] {
 function renderActivity(state: DeckState): string {
   const usage = state.local;
   if (usage === null) {
-    return `<header class="section-head"><h2>opencode activity</h2></header>
+    return `<header class="section-head"><h2>local activity</h2></header>
       <div class="scroll-body"><p class="empty bad">${escapeHtml(state.localError ?? "no local usage data")}</p></div>`;
   }
 
@@ -349,7 +364,7 @@ function renderActivity(state: DeckState): string {
     .join("");
 
   return `<header class="section-head">
-      <h2>opencode &middot; last ${usage.windowHours}h</h2>
+      <h2>local &middot; last ${usage.windowHours}h</h2>
       <span class="mono">${usage.totalMessages} msg &middot; $${usage.totalCostUsd.toFixed(2)}</span>
     </header>
     <div class="scroll-body activity-body">

@@ -48,7 +48,7 @@ export class OpencodeDbUnavailable extends Error {
  * Time slots in the activity histogram. Sixteen is what the widget has room to
  * draw at 380px without the bars collapsing into a smear.
  */
-const HISTOGRAM_SLOTS = 16;
+export const HISTOGRAM_SLOTS = 16;
 
 /**
  * Aggregates assistant-message token usage over a rolling window.

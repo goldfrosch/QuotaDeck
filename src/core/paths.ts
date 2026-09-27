@@ -15,7 +15,7 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const HOME = homedir();
 
@@ -48,6 +48,7 @@ function omoAgentDir(): string {
 }
 
 const OPENCODE_DATA = join(xdgDataHome(), "opencode");
+const OMO_AGENT = omoAgentDir();
 const QUOTADECK_STATE = join(xdgDataHome(), "quotadeck");
 
 export const PATHS = {
@@ -57,7 +58,14 @@ export const PATHS = {
   opencodeAccount: join(OPENCODE_DATA, "account.json"),
   opencodeDb: join(OPENCODE_DATA, "opencode.db"),
   codexAuth: join(codexHome(), "auth.json"),
-  omoAgentAuth: join(omoAgentDir(), "auth.json"),
+  omoAgentAuth: join(OMO_AGENT, "auth.json"),
+  /**
+   * omo's append-only session logs: interactive sessions, and the memory
+   * agents that run beside them. They carry the fast path for anyone on omo
+   * rather than opencode.
+   */
+  omoSessions: join(OMO_AGENT, "sessions"),
+  omoMemoryAgents: join(dirname(OMO_AGENT), "memory", "agents"),
   /**
    * Where opencode-claude-auth puts its advisory refresh lock. We honour the
    * same directory so a future write path can join its single-flight protocol

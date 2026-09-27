@@ -97,7 +97,7 @@ export const CONFIG = {
   custodyEnabled: bool("QUOTADECK_CUSTODY", true),
   windowHours: int("QUOTADECK_WINDOW_HOURS", 5),
   poll: {
-    /** Free: reads the local opencode database. */
+    /** Free: reads the local opencode database and omo's session logs. */
     localMs: int("QUOTADECK_POLL_LOCAL_MS", 2_000),
     storesMs: int("QUOTADECK_POLL_STORES_MS", 15_000),
     /** Rate-limited anchors. Lower this at your peril. */

@@ -4,9 +4,9 @@
  * Polling follows the anchor + dead-reckoning design. The quota endpoints are
  * aggressively rate limited (the Anthropic one allows only a handful of calls
  * before 429, usually with no retry-after), so they are *anchors* refreshed on
- * a multi-minute cadence. The local opencode database costs nothing to read
- * and carries the fast path, so the widget still moves every couple of seconds
- * between anchors.
+ * a multi-minute cadence. The local opencode database and omo's session logs
+ * cost nothing to read and carry the fast path, so the widget still moves every
+ * couple of seconds between anchors.
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } from "electron";
@@ -22,7 +22,8 @@ import type { LoadedStore } from "../core/stores.ts";
 import { fetchClaudeQuota } from "../core/sources/claude-quota.ts";
 import { fetchCodexQuota } from "../core/sources/codex-quota.ts";
 import { fetchZaiQuota } from "../core/sources/zai-quota.ts";
-import { OpencodeDbUnavailable, readLocalUsage } from "../core/sources/opencode-db.ts";
+import { readLocalUsage } from "../core/sources/opencode-db.ts";
+import { mergeUsage, readOmoUsage } from "../core/sources/omo-sessions.ts";
 import { planCustody } from "../core/custody/plan.ts";
 import { runCustody } from "../core/custody/run.ts";
 import { CONFIG } from "../core/config.ts";
@@ -147,14 +148,17 @@ function updateTray(): void {
 /* --------------------------------------------------------------- pollers */
 
 function pollLocal(): void {
+  const now = Date.now();
+  const omo = readOmoUsage(WINDOW_HOURS, now);
   try {
-    publish({ local: readLocalUsage(WINDOW_HOURS), localError: null });
+    publish({ local: mergeUsage(readLocalUsage(WINDOW_HOURS, now), omo), localError: null });
   } catch (err) {
-    if (err instanceof OpencodeDbUnavailable) {
-      publish({ local: null, localError: err.message });
-      return;
-    }
-    publish({ local: null, localError: err instanceof Error ? err.message : String(err) });
+    // No opencode database is normal on an omo-only machine; omo's logs still count.
+    publish(
+      omo.totalMessages > 0
+        ? { local: omo, localError: null }
+        : { local: null, localError: err instanceof Error ? err.message : String(err) },
+    );
   }
 }
 
